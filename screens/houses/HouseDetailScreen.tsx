@@ -127,9 +127,11 @@ const HouseDetailScreen = () => {
                   </Text>
                 </View>
               </View>
-              <Text className={`mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                {buildingName || 'Building: Unknown'}
-              </Text>
+              {buildingName && (
+                <Text className={`mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  Building: {buildingName}
+                </Text>
+              )}
             </View>
             <View className="flex-row">
               <TouchableOpacity 
@@ -143,37 +145,32 @@ const HouseDetailScreen = () => {
         </Card>
         
         {/* House Details Card */}
-        <Card className="mb-4">
-          <Text className={`text-lg font-semibold mb-3 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-            House Details
-          </Text>
-          
-          <View className="mb-2">
-            <Text className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Type</Text>
-            <Text className={`text-base ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-              {getHouseTypeLabel(house.type)}
-            </Text>
-          </View>
-          
-          <View className="mb-2">
-            <Text className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Monthly Rent</Text>
-            <Text className={`text-base ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-              ${house.rentAmount.toFixed(2)}
-            </Text>
-          </View>
-          
-          <View className="mb-2">
-            <Text className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Electricity Meter</Text>
-            <Text className={`text-base ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-              {getMeterTypeLabel(house.electricityMeterType)}
-            </Text>
-          </View>
-          
-          <View>
-            <Text className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Water Meter</Text>
-            <Text className={`text-base ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-              {getMeterTypeLabel(house.waterMeterType)}
-            </Text>
+        <Card className="mb-4" title="House Details">
+          <View className="space-y-2">
+            <View className="flex-row justify-between">
+              <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Type:</Text>
+              <Text className={`font-medium ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                {getHouseTypeLabel(house.type)}
+              </Text>
+            </View>
+            <View className="flex-row justify-between">
+              <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Monthly Rent:</Text>
+              <Text className={`font-medium ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                ${house.rentAmount.toFixed(2)}
+              </Text>
+            </View>
+            <View className="flex-row justify-between">
+              <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Electricity Meter:</Text>
+              <Text className={`font-medium ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                {getMeterTypeLabel(house.electricityMeterType)}
+              </Text>
+            </View>
+            <View className="flex-row justify-between">
+              <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Water Meter:</Text>
+              <Text className={`font-medium ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                {getMeterTypeLabel(house.waterMeterType)}
+              </Text>
+            </View>
           </View>
         </Card>
         
@@ -185,11 +182,7 @@ const HouseDetailScreen = () => {
             </Text>
             <Button
               title="Add Tenant"
-              onPress={() => navigation.navigate('AddTenant', { 
-                houseId, 
-                houseNumber: house.houseNumber,
-                buildingId: house.buildingId
-              })}
+              onPress={() => navigation.navigate('AddTenant', { houseId, houseNumber: house.houseNumber })}
               icon={<Ionicons name="person-add" size={16} color="white" />}
               size="sm"
               disabled={!!activeTenant}
@@ -227,15 +220,11 @@ const HouseDetailScreen = () => {
             <Card>
               <View className="items-center py-4">
                 <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  No active tenant for this house
+                  No active tenant
                 </Text>
                 <TouchableOpacity 
                   className="mt-2 flex-row items-center" 
-                  onPress={() => navigation.navigate('AddTenant', { 
-                    houseId, 
-                    houseNumber: house.houseNumber,
-                    buildingId: house.buildingId
-                  })}
+                  onPress={() => navigation.navigate('AddTenant', { houseId, houseNumber: house.houseNumber })}
                 >
                   <Ionicons name="person-add-outline" size={18} color="#3B82F6" />
                   <Text className="text-primary ml-1">Add Tenant</Text>
@@ -257,7 +246,7 @@ const HouseDetailScreen = () => {
               .map(tenant => (
                 <Card
                   key={tenant.id}
-                  className="mb-2"
+                  className="mb-3"
                   onPress={() => navigation.navigate('TenantDetail', { 
                     tenantId: tenant.id, 
                     tenantName: tenant.name,
@@ -270,8 +259,8 @@ const HouseDetailScreen = () => {
                       <Text className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
                         {tenant.name}
                       </Text>
-                      <Text className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                        {new Date(tenant.moveInDate).toLocaleDateString()} - {tenant.moveOutDate ? new Date(tenant.moveOutDate).toLocaleDateString() : 'N/A'}
+                      <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        {new Date(tenant.moveInDate).toLocaleDateString()} - {tenant.moveOutDate ? new Date(tenant.moveOutDate).toLocaleDateString() : 'Present'}
                       </Text>
                     </View>
                     <Ionicons name="chevron-forward" size={20} color={isDarkMode ? '#9CA3AF' : '#6B7280'} />
@@ -289,7 +278,7 @@ const HouseDetailScreen = () => {
           
           {bills.length > 0 ? (
             bills.slice(0, 3).map(bill => (
-              <Card key={bill.id} className="mb-2">
+              <Card key={bill.id} className="mb-3">
                 <View className="flex-row justify-between items-center">
                   <View>
                     <View className="flex-row items-center">
@@ -302,51 +291,13 @@ const HouseDetailScreen = () => {
                         </Text>
                       </View>
                     </View>
-                    <Text className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                       Date: {new Date(bill.billDate).toLocaleDateString()}
                     </Text>
-                    <Text className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                       Amount: ${bill.amount.toFixed(2)}
                     </Text>
                   </View>
-                  <TouchableOpacity 
-                    className="p-2"
-                    onPress={() => {
-                      // Mark bill as paid/unpaid
-                      Alert.alert(
-                        'Update Bill Status',
-                        `Mark this bill as ${bill.isPaid ? 'unpaid' : 'paid'}?`,
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          { 
-                            text: 'Update', 
-                            onPress: async () => {
-                              try {
-                                await databaseService.updateHouseBill({
-                                  ...bill,
-                                  isPaid: !bill.isPaid
-                                });
-                                
-                                // Update local state
-                                setBills(bills.map(b => 
-                                  b.id === bill.id ? { ...b, isPaid: !bill.isPaid } : b
-                                ));
-                              } catch (error) {
-                                console.error('Error updating bill status:', error);
-                                Alert.alert('Error', 'Failed to update bill status');
-                              }
-                            }
-                          },
-                        ]
-                      );
-                    }}
-                  >
-                    <Ionicons 
-                      name={bill.isPaid ? 'checkmark-circle' : 'close-circle'} 
-                      size={24} 
-                      color={bill.isPaid ? '#10B981' : '#EF4444'} 
-                    />
-                  </TouchableOpacity>
                 </View>
               </Card>
             ))
@@ -354,7 +305,7 @@ const HouseDetailScreen = () => {
             <Card>
               <View className="items-center py-4">
                 <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  No bills for this house yet
+                  No bills found for this house
                 </Text>
               </View>
             </Card>

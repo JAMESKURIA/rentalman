@@ -13,23 +13,16 @@ const ArrearsScreen = () => {
   
   const [arrears, setArrears] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [totalArrears, setTotalArrears] = useState(0);
   
   useEffect(() => {
     const loadArrears = async () => {
       try {
         setLoading(true);
-        
-        // Load arrears report
-        const arrearsData = await databaseService.getArrearsReport();
-        setArrears(arrearsData);
-        
-        // Calculate total arrears
-        const total = arrearsData.reduce((sum, item) => sum + item.amount, 0);
-        setTotalArrears(total);
+        const data = await databaseService.getArrearsReport();
+        setArrears(data);
       } catch (error) {
         console.error('Error loading arrears:', error);
-        Alert.alert('Error', 'Failed to load arrears');
+        Alert.alert('Error', 'Failed to load arrears data');
       } finally {
         setLoading(false);
       }
@@ -42,60 +35,35 @@ const ArrearsScreen = () => {
     return unsubscribe;
   }, [navigation]);
   
-  const handleMarkAsPaid = async (billId: number) => {
-    try {
-      // Get the bill
-      const bill = arrears.find(a => a.billId === billId);
-      
-      if (bill) {
-        // Update the bill
-        await databaseService.updateHouseBill({
-          id: billId,
-          houseId: bill.houseId,
-          utilityBillId: bill.utilityBillId,
-          amount: bill.amount,
-          isPaid: true
-        });
-        
-        // Update local state
-        const updatedArrears = arrears.filter(a => a.billId !== billId);
-        setArrears(updatedArrears);
-        
-        // Update total
-        const total = updatedArrears.reduce((sum, item) => sum + item.amount, 0);
-        setTotalArrears(total);
-        
-        Alert.alert('Success', 'Bill marked as paid');
-      }
-    } catch (error) {
-      console.error('Error marking bill as paid:', error);
-      Alert.alert('Error', 'Failed to mark bill as paid');
-    }
-  };
-  
   const renderArrearItem = ({ item }: { item: any }) => (
     <Card className="mb-3">
-      <View className="flex-row justify-between">
-        <View>
+      <View>
+        <View className="flex-row justify-between items-center">
           <Text className={`font-bold text-lg ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
             {item.tenantName}
           </Text>
-          <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-            House: {item.houseNumber} ({item.buildingName})
-          </Text>
-          <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-            {item.billType.charAt(0).toUpperCase() + item.billType.slice(1)} Bill ({new Date(item.billDate).toLocaleDateString()})
-          </Text>
-          <Text className={`font-semibold ${isDarkMode ? 'text-red-400' : 'text-red-600'}`}>
-            Amount: ${item.amount.toFixed(2)}
-          </Text>
+          <View className="px-2 py-0.5 rounded-full bg-red-100">
+            <Text className="text-xs text-red-800">
+              Unpaid
+            </Text>
+          </View>
         </View>
-        <TouchableOpacity 
-          className="p-2"
-          onPress={() => handleMarkAsPaid(item.billId)}
-        >
-          <Ionicons name="checkmark-circle" size={24} color="#10B981" />
-        </TouchableOpacity>
+        <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+          Building: {item.buildingName}
+        </Text>
+        <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+          House: {item.houseNumber}
+        </Text>
+        <View className="mt-2 p-2 bg-opacity-10 bg-red-500 rounded">
+          <View className="flex-row justify-between">
+            <Text className={`${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+              {item.billType.charAt(0).toUpperCase() + item.billType.slice(1)} Bill ({new Date(item.billDate).toLocaleDateString()})
+            </Text>
+            <Text className={`font-medium ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+              ${item.amount.toFixed(2)}
+            </Text>
+          </View>
+        </View>
       </View>
     </Card>
   );
@@ -103,7 +71,7 @@ const ArrearsScreen = () => {
   const renderEmptyList = () => (
     <View className="items-center justify-center py-8">
       <Ionicons 
-        name="checkmark-circle" 
+        name="checkmark-circle-outline" 
         size={60} 
         color={isDarkMode ? '#4B5563' : '#D1D5DB'} 
       />
@@ -111,32 +79,21 @@ const ArrearsScreen = () => {
         No arrears found
       </Text>
       <Text className={`text-center mt-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-        All bills are paid
+        All bills have been paid
       </Text>
     </View>
   );
   
   return (
     <Container>
-      <Text className={`text-2xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+      <Text className={`text-2xl font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
         Arrears
       </Text>
-      
-      <Card className="mb-4">
-        <View className="items-center">
-          <Text className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-            Total Unpaid Bills
-          </Text>
-          <Text className={`text-2xl font-bold ${isDarkMode ? 'text-red-400' : 'text-red-600'}`}>
-            ${totalArrears.toFixed(2)}
-          </Text>
-        </View>
-      </Card>
       
       <FlatList
         data={arrears}
         renderItem={renderArrearItem}
-        keyExtractor={(item, index) => `${item.billId}-${index}`}
+        keyExtractor={(item, index) => `${item.tenantId}-${item.billId}-${index}`}
         ListEmptyComponent={renderEmptyList}
         contentContainerStyle={{ flexGrow: 1 }}
       />

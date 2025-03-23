@@ -16,7 +16,7 @@ const UtilityBillsScreen = () => {
   // If buildingId is provided, show bills for that building only
   const { buildingId, buildingName } = route.params as { buildingId?: number, buildingName?: string } || {};
   
-  const [bills, setUtilityBills] = useState<UtilityBill[]>([]);
+  const [bills, setBills] = useState<(UtilityBill & { buildingName?: string })[]>([]);
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -29,22 +29,32 @@ const UtilityBillsScreen = () => {
         const buildingsData = await databaseService.getBuildings();
         setBuildings(buildingsData);
         
-        let billsData: UtilityBill[] = [];
+        let billsData: (UtilityBill & { buildingName?: string })[] = [];
         
         if (buildingId) {
           // Load bills for specific building
-          billsData = await databaseService.getUtilityBillsByBuildingId(buildingId);
+          const data = await databaseService.getUtilityBillsByBuildingId(buildingId);
+          billsData = data.map(bill => ({
+            ...bill,
+            buildingName: buildingName || buildingsData.find(b => b.id === buildingId)?.name
+          }));
         } else {
           // Load all bills from all buildings
           for (const building of buildingsData) {
             const data = await databaseService.getUtilityBillsByBuildingId(building.id!);
-            billsData = [...billsData, ...data];
+            billsData = [
+              ...billsData,
+              ...data.map(bill => ({
+                ...bill,
+                buildingName: building.name
+              }))
+            ];
           }
         }
         
-        setUtilityBills(billsData);
+        setBills(billsData);
       } catch (error) {
-        console.error('Error loading utility bills:', error);
+        console.error('Error loading bills:', error);
         Alert.alert('Error', 'Failed to load utility bills');
       } finally {
         setLoading(false);
@@ -56,21 +66,41 @@ const UtilityBillsScreen = () => {
     // Refresh data when the screen is focused
     const unsubscribe = navigation.addListener('focus', loadBills);
     return unsubscribe;
-  }, [buildingId, navigation]);
+  }, [buildingId, buildingName, navigation]);
   
-  const getBuildingName = (buildingId: number) => {
-    const building = buildings.find(b => b.id === buildingId);
-    return building ? building.name : 'Unknown Building';
+  const handleDeleteBill = (bill: UtilityBill) => {
+    Alert.alert(
+      'Delete Bill',
+      `Are you sure you want to delete this ${bill.billType} bill?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Delete bill functionality to be implemented
+              Alert.alert('Info', 'Delete bill functionality to be implemented');
+              // For now, just remove from the list
+              setBills(bills.filter(b => b.id !== bill.id));
+            } catch (error) {
+              console.error('Error deleting bill:', error);
+              Alert.alert('Error', 'Failed to delete bill');
+            }
+          }
+        },
+      ]
+    );
   };
   
-  const renderBillItem = ({ item }: { item: UtilityBill }) => (
+  const renderBillItem = ({ item }: { item: UtilityBill & { buildingName?: string } }) => (
     <Card
       className="mb-3"
       onPress={() => navigation.navigate('UtilityBillDetail', { 
         billId: item.id, 
-        billType: `${item.billType.charAt(0).toUpperCase() + item.billType.slice(1)} Bill`,
+        billType: item.billType.charAt(0).toUpperCase() + item.billType.slice(1) + ' Bill',
         buildingId: item.buildingId,
-        buildingName: getBuildingName(item.buildingId)
+        buildingName: item.buildingName
       })}
     >
       <View className="flex-row justify-between">
@@ -91,13 +121,20 @@ const UtilityBillsScreen = () => {
           <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
             Amount: ${item.totalAmount.toFixed(2)}
           </Text>
-          {!buildingId && (
+          {!buildingId && item.buildingName && (
             <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              Building: {getBuildingName(item.buildingId)}
+              Building: {item.buildingName}
             </Text>
           )}
         </View>
-        <Ionicons name="chevron-forward" size={20} color={isDarkMode ? '#9CA3AF' : '#6B7280'} />
+        <View className="flex-row">
+          <TouchableOpacity 
+            className="p-2"
+            onPress={() => handleDeleteBill(item)}
+          >
+            <Ionicons name="trash-outline" size={20} color="#EF4444" />
+          </TouchableOpacity>
+        </View>
       </View>
     </Card>
   );

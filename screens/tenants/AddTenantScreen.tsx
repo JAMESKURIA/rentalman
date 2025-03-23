@@ -15,7 +15,7 @@ const AddTenantScreen = () => {
   const { isDarkMode } = useTheme();
   
   // If houseId is provided, pre-select that house
-  const { houseId, buildingId } = route.params as { houseId?: number, buildingId?: number } || {};
+  const { houseId, houseNumber } = route.params as { houseId?: number, houseNumber?: string } || {};
   
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [houses, setHouses] = useState<House[]>([]);
@@ -23,13 +23,13 @@ const AddTenantScreen = () => {
   const [submitting, setSubmitting] = useState(false);
   
   // Form state
+  const [selectedBuildingId, setSelectedBuildingId] = useState<number | null>(null);
+  const [selectedHouseId, setSelectedHouseId] = useState<number | null>(houseId || null);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [occupants, setOccupants] = useState('1');
   const [moveInDate, setMoveInDate] = useState(new Date().toISOString().split('T')[0]);
-  const [selectedBuildingId, setSelectedBuildingId] = useState<number | null>(buildingId || null);
-  const [selectedHouseId, setSelectedHouseId] = useState<number | null>(houseId || null);
   
   // Dropdown open states
   const [buildingOpen, setBuildingOpen] = useState(false);
@@ -37,13 +37,13 @@ const AddTenantScreen = () => {
   
   // Errors
   const [errors, setErrors] = useState({
+    buildingId: '',
+    houseId: '',
     name: '',
     phone: '',
     email: '',
     occupants: '',
     moveInDate: '',
-    buildingId: '',
-    houseId: '',
   });
   
   useEffect(() => {
@@ -55,44 +55,83 @@ const AddTenantScreen = () => {
         const buildingsData = await databaseService.getBuildings();
         setBuildings(buildingsData);
         
-        // If no buildingId was provided and we have buildings, select the first one
-        if (!buildingId && buildingsData.length > 0 && !selectedBuildingId) {
-          setSelectedBuildingId(buildingsData[0].id!);
-        }
-        
-        // Load houses for selected building
-        if (selectedBuildingId) {
-          const housesData = await databaseService.getHousesByBuildingId(selectedBuildingId);
-          // Filter out occupied houses unless the houseId is already occupied and provided
-          const availableHouses = housesData.filter(house => !house.isOccupied || house.id === houseId);
-          setHouses(availableHouses);
-          
-          // If no houseId was provided and we have houses, select the first one
-          if (!houseId && availableHouses.length > 0 && !selectedHouseId) {
-            setSelectedHouseId(availableHouses[0].id!);
+        // If houseId is provided, find its building
+        if (houseId) {
+          const house = await databaseService.getHouseById(houseId);
+          if (house) {
+            setSelectedBuildingId(house.buildingId);
+            
+            // Load houses for this building
+            const housesData = await databaseService.getHousesByBuildingId(house.buildingId);
+            setHouses(housesData.filter(h => !h.isOccupied || h.id === houseId));
           }
+        } else if (buildingsData.length > 0) {
+          // If no houseId was provided and we have buildings, select the first one
+          setSelectedBuildingId(buildingsData[0].id!);
+          
+          // Load houses for this building
+          const housesData = await databaseService.getHousesByBuildingId(buildingsData[0].id!);
+          setHouses(housesData.filter(h => !h.isOccupied));
         }
       } catch (error) {
         console.error('Error loading data:', error);
-        Alert.alert('Error', 'Failed to load buildings and houses');
+        Alert.alert('Error', 'Failed to load data');
       } finally {
         setLoading(false);
       }
     };
     
     loadData();
-  }, [buildingId, houseId, selectedBuildingId]);
+  }, [houseId]);
+  
+  // When building selection changes, update houses
+  useEffect(() => {
+    const loadHouses = async () => {
+      if (selectedBuildingId) {
+        try {
+          setLoading(true);
+          const housesData = await databaseService.getHousesByBuildingId(selectedBuildingId);
+          
+          // Filter out occupied houses, except the pre-selected house
+          setHouses(housesData.filter(h => !h.isOccupied || h.id === houseId));
+          
+          // If the previously selected house is not in this building, clear it
+          if (selectedHouseId && !housesData.some(h => h.id === selectedHouseId)) {
+            setSelectedHouseId(null);
+          }
+        } catch (error) {
+          console.error('Error loading houses:', error);
+          Alert.alert('Error', 'Failed to load houses');
+        } finally {
+          setLoading(false);
+        }
+      } else {
+        setHouses([]);
+        setSelectedHouseId(null);
+      }
+    };
+    
+    loadHouses();
+  }, [selectedBuildingId, houseId]);
   
   const validate = () => {
     const newErrors = {
+      buildingId: '',
+      houseId: '',
       name: '',
       phone: '',
       email: '',
       occupants: '',
       moveInDate: '',
-      buildingId: '',
-      houseId: '',
     };
+    
+    if (!selectedBuildingId) {
+      newErrors.buildingId = 'Building is required';
+    }
+    
+    if (!selectedHouseId) {
+      newErrors.houseId = 'House is required';
+    }
     
     if (!name.trim()) {
       newErrors.name = 'Tenant name is required';
@@ -102,24 +141,18 @@ const AddTenantScreen = () => {
       newErrors.phone = 'Phone number is required';
     }
     
-    if (email && !email.includes('@')) {
-      newErrors.email = 'Invalid email address';
+    if (email && !/\S+@\S+\.\S+/.test(email)) {
+      newErrors.email = 'Email is invalid';
     }
     
-    if (!occupants.trim() || isNaN(parseInt(occupants)) || parseInt(occupants) < 1) {
-      newErrors.occupants = 'Number of occupants must be at least 1';
+    if (!occupants.trim()) {
+      newErrors.occupants = 'Number of occupants is required';
+    } else if (isNaN(parseInt(occupants)) || parseInt(occupants) <= 0) {
+      newErrors.occupants = 'Occupants must be a positive number';
     }
     
     if (!moveInDate.trim()) {
       newErrors.moveInDate = 'Move-in date is required';
-    }
-    
-    if (!selectedBuildingId) {
-      newErrors.buildingId = 'Building is required';
-    }
-    
-    if (!selectedHouseId) {
-      newErrors.houseId = 'House is required';
     }
     
     setErrors(newErrors);
@@ -185,56 +218,11 @@ const AddTenantScreen = () => {
         Add New Tenant
       </Text>
       
-      {/* Tenant Details */}
-      <Input
-        label="Tenant Name"
-        value={name}
-        onChangeText={setName}
-        placeholder="Enter tenant name"
-        error={errors.name}
-      />
-      
-      <Input
-        label="Phone Number"
-        value={phone}
-        onChangeText={setPhone}
-        placeholder="Enter phone number"
-        keyboardType="phone-pad"
-        error={errors.phone}
-      />
-      
-      <Input
-        label="Email (Optional)"
-        value={email}
-        onChangeText={setEmail}
-        placeholder="Enter email address"
-        keyboardType="email-address"
-        autoCapitalize="none"
-        error={errors.email}
-      />
-      
-      <Input
-        label="Number of Occupants"
-        value={occupants}
-        onChangeText={setOccupants}
-        placeholder="Enter number of occupants"
-        keyboardType="numeric"
-        error={errors.occupants}
-      />
-      
-      <Input
-        label="Move-in Date"
-        value={moveInDate}
-        onChangeText={setMoveInDate}
-        placeholder="YYYY-MM-DD"
-        error={errors.moveInDate}
-      />
-      
       {/* Building Dropdown */}
       <Text className={`text-sm font-medium mb-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
         Building
       </Text>
-      <View className="mb-4 z-30">
+      <View className="mb-4 z-50">
         <DropDownPicker
           open={buildingOpen}
           value={selectedBuildingId}
@@ -256,7 +244,7 @@ const AddTenantScreen = () => {
           listItemLabelStyle={{
             color: isDarkMode ? '#FFFFFF' : '#000000',
           }}
-          disabled={buildingId !== undefined || loading}
+          disabled={!!houseId || loading}
         />
         {errors.buildingId ? (
           <Text className="text-red-500 text-xs mt-1">{errors.buildingId}</Text>
@@ -267,7 +255,7 @@ const AddTenantScreen = () => {
       <Text className={`text-sm font-medium mb-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
         House
       </Text>
-      <View className="mb-4 z-20">
+      <View className="mb-4 z-40">
         <DropDownPicker
           open={houseOpen}
           value={selectedHouseId}
@@ -289,18 +277,66 @@ const AddTenantScreen = () => {
           listItemLabelStyle={{
             color: isDarkMode ? '#FFFFFF' : '#000000',
           }}
-          disabled={houseId !== undefined || loading || houses.length === 0}
+          disabled={!!houseId || loading || !selectedBuildingId}
         />
         {errors.houseId ? (
           <Text className="text-red-500 text-xs mt-1">{errors.houseId}</Text>
         ) : null}
-        
-        {houses.length === 0 && selectedBuildingId && (
+        {houses.length === 0 && selectedBuildingId && !loading && (
           <Text className="text-yellow-500 text-xs mt-1">
-            No available houses in this building. All houses are occupied.
+            No vacant houses available in this building
           </Text>
         )}
       </View>
+      
+      {/* Tenant Name */}
+      <Input
+        label="Tenant Name"
+        value={name}
+        onChangeText={setName}
+        placeholder="Enter tenant name"
+        error={errors.name}
+      />
+      
+      {/* Phone */}
+      <Input
+        label="Phone Number"
+        value={phone}
+        onChangeText={setPhone}
+        placeholder="Enter phone number"
+        keyboardType="phone-pad"
+        error={errors.phone}
+      />
+      
+      {/* Email (Optional) */}
+      <Input
+        label="Email (Optional)"
+        value={email}
+        onChangeText={setEmail}
+        placeholder="Enter email address"
+        keyboardType="email-address"
+        autoCapitalize="none"
+        error={errors.email}
+      />
+      
+      {/* Number of Occupants */}
+      <Input
+        label="Number of Occupants"
+        value={occupants}
+        onChangeText={setOccupants}
+        placeholder="Enter number of occupants"
+        keyboardType="numeric"
+        error={errors.occupants}
+      />
+      
+      {/* Move-in Date */}
+      <Input
+        label="Move-in Date"
+        value={moveInDate}
+        onChangeText={setMoveInDate}
+        placeholder="YYYY-MM-DD"
+        error={errors.moveInDate}
+      />
       
       {/* Submit Buttons */}
       <View className="flex-row mt-4 z-10">
@@ -317,7 +353,6 @@ const AddTenantScreen = () => {
           loading={submitting}
           size="lg"
           className="flex-1 ml-2"
-          disabled={houses.length === 0}
         />
       </View>
     </Container>

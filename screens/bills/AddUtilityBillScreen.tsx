@@ -113,22 +113,16 @@ const AddUtilityBillScreen = () => {
         isPaid: false,
       });
       
-      // Calculate bill shares for each house
+      // Calculate bill shares based on bill type
       let shares: { houseId: number, amount: number }[] = [];
       
       if (billType === 'electricity') {
-        shares = await databaseService.calculateElectricityBillShares(
-          billId,
-          parseFloat(totalAmount)
-        );
+        shares = await databaseService.calculateElectricityBillShares(billId, parseFloat(totalAmount));
       } else if (billType === 'water') {
-        shares = await databaseService.calculateWaterBillShares(
-          billId,
-          parseFloat(totalAmount)
-        );
+        shares = await databaseService.calculateWaterBillShares(billId, parseFloat(totalAmount));
       }
       
-      // Create house bills
+      // Create house bills for each share
       for (const share of shares) {
         await databaseService.createHouseBill({
           houseId: share.houseId,
@@ -146,7 +140,7 @@ const AddUtilityBillScreen = () => {
             text: 'OK', 
             onPress: () => navigation.navigate('UtilityBillDetail', { 
               billId, 
-              billType: `${billType!.charAt(0).toUpperCase() + billType!.slice(1)} Bill`,
+              billType: billType === 'electricity' ? 'Electricity Bill' : 'Water Bill',
               buildingId: selectedBuildingId
             }) 
           }
@@ -176,7 +170,7 @@ const AddUtilityBillScreen = () => {
       <Text className={`text-sm font-medium mb-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
         Building
       </Text>
-      <View className="mb-4 z-30">
+      <View className="mb-4 z-50">
         <DropDownPicker
           open={buildingOpen}
           value={selectedBuildingId}
@@ -209,7 +203,7 @@ const AddUtilityBillScreen = () => {
       <Text className={`text-sm font-medium mb-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
         Bill Type
       </Text>
-      <View className="mb-4 z-20">
+      <View className="mb-4 z-40">
         <DropDownPicker
           open={billTypeOpen}
           value={billType}

@@ -6,7 +6,7 @@ import { useTheme } from '../../utils/ThemeContext';
 import Container from '../../components/Container';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
-import databaseService, { Tenant, House } from '../../services/DatabaseService';
+import databaseService, { Tenant, House, Building } from '../../services/DatabaseService';
 
 const TenantsScreen = () => {
   const navigation = useNavigation<any>();
@@ -20,20 +20,22 @@ const TenantsScreen = () => {
       try {
         setLoading(true);
         
-        // Load all active tenants
+        // Load active tenants
         const tenantsData = await databaseService.getActiveTenants();
         
-        // Load house details for each tenant
+        // Load house and building details for each tenant
         const tenantsWithDetails: (Tenant & { houseNumber?: string, buildingName?: string })[] = [];
         
         for (const tenant of tenantsData) {
           const house = await databaseService.getHouseById(tenant.houseId);
+          
           if (house) {
             const building = await databaseService.getBuildingById(house.buildingId);
+            
             tenantsWithDetails.push({
               ...tenant,
               houseNumber: house.houseNumber,
-              buildingName: building?.name
+              buildingName: building?.name,
             });
           } else {
             tenantsWithDetails.push(tenant);
@@ -97,13 +99,16 @@ const TenantsScreen = () => {
           <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
             {item.phone}
           </Text>
-          <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-            House: {item.houseNumber || 'Unknown'}
-            {item.buildingName ? ` (${item.buildingName})` : ''}
-          </Text>
-          <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-            Occupants: {item.occupants}
-          </Text>
+          {item.houseNumber && (
+            <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+              House: {item.houseNumber}
+            </Text>
+          )}
+          {item.buildingName && (
+            <Text className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+              Building: {item.buildingName}
+            </Text>
+          )}
         </View>
         <View className="flex-row">
           <TouchableOpacity 
