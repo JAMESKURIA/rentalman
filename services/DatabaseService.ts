@@ -1,5 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 import { Platform } from 'react-native';
+import { HouseType } from '../state';
 
 export interface Building {
   id?: number;
@@ -13,10 +14,11 @@ export interface House {
   id?: number;
   buildingId: number;
   houseNumber: string;
-  type: 'bedsitter' | 'single' | 'one-bedroom' | 'two-bedroom' | 'own-compound';
+  type: string;
+  typeId?: number;
   rentAmount: number;
   isOccupied: boolean;
-  electricityMeterType: 'shared' | 'token';
+  electricityMeterType: 'shared' | 'token' | 'individual';
   waterMeterType: 'individual' | 'shared';
   createdAt?: string;
   updatedAt?: string;
@@ -32,6 +34,7 @@ export interface Tenant {
   moveInDate: string;
   moveOutDate?: string;
   isActive: boolean;
+  rentDueDay: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -57,6 +60,16 @@ export interface HouseBill {
   updatedAt?: string;
 }
 
+export interface ServiceProvider {
+  id?: number;
+  name: string;
+  phone: string;
+  email?: string;
+  serviceType: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface ServiceRecord {
   id?: number;
   houseId: number;
@@ -69,12 +82,11 @@ export interface ServiceRecord {
   updatedAt?: string;
 }
 
-export interface ServiceProvider {
+export interface ReminderSettings {
   id?: number;
-  name: string;
-  phone: string;
-  email?: string;
-  serviceType: string;
+  enabled: boolean;
+  daysBeforeDue: number;
+  reminderTime: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -107,18 +119,28 @@ class DatabaseService {
         updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
       )`,
       
+      `CREATE TABLE IF NOT EXISTS houseTypes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        defaultRentAmount REAL NOT NULL,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+      )`,
+      
       `CREATE TABLE IF NOT EXISTS houses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         buildingId INTEGER NOT NULL,
         houseNumber TEXT NOT NULL,
         type TEXT NOT NULL,
+        typeId INTEGER,
         rentAmount REAL NOT NULL,
         isOccupied INTEGER NOT NULL DEFAULT 0,
         electricityMeterType TEXT NOT NULL,
         waterMeterType TEXT NOT NULL,
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
         updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (buildingId) REFERENCES buildings (id) ON DELETE CASCADE
+        FOREIGN KEY (buildingId) REFERENCES buildings (id) ON DELETE CASCADE,
+        FOREIGN KEY (typeId) REFERENCES houseTypes (id) ON DELETE SET NULL
       )`,
       
       `CREATE TABLE IF NOT EXISTS tenants (
@@ -131,6 +153,7 @@ class DatabaseService {
         moveInDate TEXT NOT NULL,
         moveOutDate TEXT,
         isActive INTEGER NOT NULL DEFAULT 1,
+        rentDueDay INTEGER NOT NULL DEFAULT 1,
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
         updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (houseId) REFERENCES houses (id) ON DELETE CASCADE
@@ -182,6 +205,15 @@ class DatabaseService {
         updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (houseId) REFERENCES houses (id) ON DELETE CASCADE,
         FOREIGN KEY (providerId) REFERENCES serviceProviders (id) ON DELETE SET NULL
+      )`,
+      
+      `CREATE TABLE IF NOT EXISTS reminderSettings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        daysBeforeDue INTEGER NOT NULL DEFAULT 3,
+        reminderTime TEXT NOT NULL DEFAULT '09:00',
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
       )`
     ];
 
@@ -189,6 +221,32 @@ class DatabaseService {
       for (const query of createTablesQueries) {
         await this.executeSql(query, []);
       }
+      
+      // Insert default house types if none exist
+      const houseTypesCount = await this.executeSql('SELECT COUNT(*) as count FROM houseTypes', []);
+      if (houseTypesCount.rows.item(0).count === 0) {
+        const defaultHouseTypes = [
+          { name: 'Bedsitter', defaultRentAmount: 5000 },
+          { name: 'Single Room', defaultRentAmount: 4000 },
+          { name: 'One Bedroom', defaultRentAmount: 8000 },
+          { name: 'Two Bedroom', defaultRentAmount: 12000 },
+          { name: 'Own Compound', defaultRentAmount: 15000 },
+        ];
+        
+        for (const type of defaultHouseTypes) {
+          await this.createHouseType(type);
+        }
+      }
+      
+      // Insert default reminder settings if none exist
+      const reminderSettingsCount = await this.executeSql('SELECT COUNT(*) as count FROM reminderSettings', []);
+      if (reminderSettingsCount.rows.item(0).count === 0) {
+        await this.executeSql(
+          'INSERT INTO reminderSettings (enabled, daysBeforeDue, reminderTime) VALUES (?, ?, ?)',
+          [1, 3, '09:00']
+        );
+      }
+      
       console.log('Tables created successfully');
     } catch (error) {
       console.error('Error creating tables:', error);
@@ -293,6 +351,85 @@ class DatabaseService {
     }
   }
 
+  // House Type CRUD operations
+  async createHouseType(houseType: HouseType): Promise<number> {
+    try {
+      const { name, defaultRentAmount } = houseType;
+      const now = new Date().toISOString();
+      
+      const result = await this.executeSql(
+        'INSERT INTO houseTypes (name, defaultRentAmount, createdAt, updatedAt) VALUES (?, ?, ?, ?)',
+        [name, defaultRentAmount, now, now]
+      );
+      
+      return result.insertId;
+    } catch (error) {
+      console.error('Error creating house type:', error);
+      throw error;
+    }
+  }
+
+  async getHouseTypes(): Promise<HouseType[]> {
+    try {
+      const result = await this.executeSql('SELECT * FROM houseTypes ORDER BY name');
+      
+      const houseTypes: HouseType[] = [];
+      for (let i = 0; i < result.rows.length; i++) {
+        houseTypes.push(result.rows.item(i));
+      }
+      
+      return houseTypes;
+    } catch (error) {
+      console.error('Error getting house types:', error);
+      throw error;
+    }
+  }
+
+  async getHouseTypeById(id: number): Promise<HouseType | null> {
+    try {
+      const result = await this.executeSql(
+        'SELECT * FROM houseTypes WHERE id = ?',
+        [id]
+      );
+      
+      if (result.rows.length === 0) {
+        return null;
+      }
+      
+      return result.rows.item(0);
+    } catch (error) {
+      console.error('Error getting house type by ID:', error);
+      throw error;
+    }
+  }
+
+  async updateHouseType(houseType: HouseType): Promise<void> {
+    try {
+      const { id, name, defaultRentAmount } = houseType;
+      const now = new Date().toISOString();
+      
+      await this.executeSql(
+        'UPDATE houseTypes SET name = ?, defaultRentAmount = ?, updatedAt = ? WHERE id = ?',
+        [name, defaultRentAmount, now, id]
+      );
+    } catch (error) {
+      console.error('Error updating house type:', error);
+      throw error;
+    }
+  }
+
+  async deleteHouseType(id: number): Promise<void> {
+    try {
+      await this.executeSql(
+        'DELETE FROM houseTypes WHERE id = ?',
+        [id]
+      );
+    } catch (error) {
+      console.error('Error deleting house type:', error);
+      throw error;
+    }
+  }
+
   // House CRUD operations
   async createHouse(house: House): Promise<number> {
     try {
@@ -300,6 +437,7 @@ class DatabaseService {
         buildingId, 
         houseNumber, 
         type, 
+        typeId,
         rentAmount, 
         isOccupied, 
         electricityMeterType, 
@@ -313,17 +451,19 @@ class DatabaseService {
           buildingId, 
           houseNumber, 
           type, 
+          typeId,
           rentAmount, 
           isOccupied, 
           electricityMeterType, 
           waterMeterType, 
           createdAt, 
           updatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           buildingId, 
           houseNumber, 
           type, 
+          typeId || null,
           rentAmount, 
           isOccupied ? 1 : 0, 
           electricityMeterType, 
@@ -392,6 +532,7 @@ class DatabaseService {
         buildingId, 
         houseNumber, 
         type, 
+        typeId,
         rentAmount, 
         isOccupied, 
         electricityMeterType, 
@@ -405,6 +546,7 @@ class DatabaseService {
           buildingId = ?, 
           houseNumber = ?, 
           type = ?, 
+          typeId = ?,
           rentAmount = ?, 
           isOccupied = ?, 
           electricityMeterType = ?, 
@@ -415,6 +557,7 @@ class DatabaseService {
           buildingId, 
           houseNumber, 
           type, 
+          typeId || null,
           rentAmount, 
           isOccupied ? 1 : 0, 
           electricityMeterType, 
@@ -451,7 +594,8 @@ class DatabaseService {
         email, 
         occupants, 
         moveInDate, 
-        isActive 
+        isActive,
+        rentDueDay = 1
       } = tenant;
       
       const now = new Date().toISOString();
@@ -464,10 +608,11 @@ class DatabaseService {
           email, 
           occupants, 
           moveInDate, 
-          isActive, 
+          isActive,
+          rentDueDay,
           createdAt, 
           updatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           houseId, 
           name, 
@@ -475,7 +620,8 @@ class DatabaseService {
           email || null, 
           occupants, 
           moveInDate, 
-          isActive ? 1 : 0, 
+          isActive ? 1 : 0,
+          rentDueDay,
           now, 
           now
         ]
@@ -551,7 +697,8 @@ class DatabaseService {
         occupants, 
         moveInDate, 
         moveOutDate, 
-        isActive 
+        isActive,
+        rentDueDay
       } = tenant;
       
       const now = new Date().toISOString();
@@ -565,7 +712,8 @@ class DatabaseService {
           occupants = ?, 
           moveInDate = ?, 
           moveOutDate = ?, 
-          isActive = ?, 
+          isActive = ?,
+          rentDueDay = ?,
           updatedAt = ? 
         WHERE id = ?`,
         [
@@ -576,7 +724,8 @@ class DatabaseService {
           occupants, 
           moveInDate, 
           moveOutDate || null, 
-          isActive ? 1 : 0, 
+          isActive ? 1 : 0,
+          rentDueDay || 1,
           now, 
           id
         ]
@@ -894,6 +1043,64 @@ class DatabaseService {
     }
   }
 
+  async getServiceProviderById(id: number): Promise<ServiceProvider | null> {
+    try {
+      const result = await this.executeSql(
+        'SELECT * FROM serviceProviders WHERE id = ?',
+        [id]
+      );
+      
+      if (result.rows.length === 0) {
+        return null;
+      }
+      
+      return result.rows.item(0);
+    } catch (error) {
+      console.error('Error getting service provider by ID:', error);
+      throw error;
+    }
+  }
+
+  async updateServiceProvider(provider: ServiceProvider): Promise<void> {
+    try {
+      const { id, name, phone, email, serviceType } = provider;
+      const now = new Date().toISOString();
+      
+      await this.executeSql(
+        `UPDATE serviceProviders SET 
+          name = ?, 
+          phone = ?, 
+          email = ?, 
+          serviceType = ?, 
+          updatedAt = ? 
+        WHERE id = ?`,
+        [
+          name, 
+          phone, 
+          email || null, 
+          serviceType, 
+          now, 
+          id
+        ]
+      );
+    } catch (error) {
+      console.error('Error updating service provider:', error);
+      throw error;
+    }
+  }
+
+  async deleteServiceProvider(id: number): Promise<void> {
+    try {
+      await this.executeSql(
+        'DELETE FROM serviceProviders WHERE id = ?',
+        [id]
+      );
+    } catch (error) {
+      console.error('Error deleting service provider:', error);
+      throw error;
+    }
+  }
+
   // Service Record CRUD operations
   async createServiceRecord(record: ServiceRecord): Promise<number> {
     try {
@@ -945,6 +1152,116 @@ class DatabaseService {
       return records;
     } catch (error) {
       console.error('Error getting service records by house ID:', error);
+      throw error;
+    }
+  }
+
+  async getServiceRecordById(id: number): Promise<ServiceRecord | null> {
+    try {
+      const result = await this.executeSql(
+        'SELECT * FROM serviceRecords WHERE id = ?',
+        [id]
+      );
+      
+      if (result.rows.length === 0) {
+        return null;
+      }
+      
+      return result.rows.item(0);
+    } catch (error) {
+      console.error('Error getting service record by ID:', error);
+      throw error;
+    }
+  }
+
+  async updateServiceRecord(record: ServiceRecord): Promise<void> {
+    try {
+      const { id, houseId, serviceType, serviceDate, cost, providerId, notes } = record;
+      const now = new Date().toISOString();
+      
+      await this.executeSql(
+        `UPDATE serviceRecords SET 
+          houseId = ?, 
+          serviceType = ?, 
+          serviceDate = ?, 
+          cost = ?, 
+          providerId = ?, 
+          notes = ?, 
+          updatedAt = ? 
+        WHERE id = ?`,
+        [
+          houseId, 
+          serviceType, 
+          serviceDate, 
+          cost, 
+          providerId || null, 
+          notes || null, 
+          now, 
+          id
+        ]
+      );
+    } catch (error) {
+      console.error('Error updating service record:', error);
+      throw error;
+    }
+  }
+
+  async deleteServiceRecord(id: number): Promise<void> {
+    try {
+      await this.executeSql(
+        'DELETE FROM serviceRecords WHERE id = ?',
+        [id]
+      );
+    } catch (error) {
+      console.error('Error deleting service record:', error);
+      throw error;
+    }
+  }
+
+  // Reminder Settings CRUD operations
+  async getReminderSettings(): Promise<ReminderSettings | null> {
+    try {
+      const result = await this.executeSql('SELECT * FROM reminderSettings LIMIT 1', []);
+      
+      if (result.rows.length === 0) {
+        return null;
+      }
+      
+      const settings = result.rows.item(0);
+      return {
+        ...settings,
+        enabled: !!settings.enabled // Convert to boolean
+      };
+    } catch (error) {
+      console.error('Error getting reminder settings:', error);
+      throw error;
+    }
+  }
+
+  async updateReminderSettings(settings: ReminderSettings): Promise<void> {
+    try {
+      const { enabled, daysBeforeDue, reminderTime } = settings;
+      const now = new Date().toISOString();
+      
+      // Get the ID of the first record
+      const result = await this.executeSql('SELECT id FROM reminderSettings LIMIT 1', []);
+      
+      if (result.rows.length === 0) {
+        // Insert if no record exists
+        await this.executeSql(
+          'INSERT INTO reminderSettings (enabled, daysBeforeDue, reminderTime, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)',
+          [enabled ? 1 : 0, daysBeforeDue, reminderTime, now, now]
+        );
+      } else {
+        // Update existing record
+        const id = result.rows.item(0).id;
+        await this.executeSql(
+          'UPDATE reminderSettings SET enabled = ?, daysBeforeDue = ?, reminderTime = ?, updatedAt = ? WHERE id = ?',
+          [enabled ? 1 : 0, daysBeforeDue, reminderTime, now, id]
+        );
+      }
+    } catch (error) {
+      console.error('Error updating reminder settings:', error);
       throw error;
     }
   }
@@ -1114,6 +1431,71 @@ class DatabaseService {
       console.error('Error calculating electricity bill shares:', error);
       throw error;
     }
+  }
+
+  // Bulk import methods
+  async bulkImportHouses(houses: Partial<House>[]): Promise<{ success: number, failed: number }> {
+    let success = 0;
+    let failed = 0;
+    
+    for (const house of houses) {
+      try {
+        if (!house.buildingId || !house.houseNumber || !house.type || !house.rentAmount) {
+          failed++;
+          continue;
+        }
+        
+        await this.createHouse({
+          buildingId: house.buildingId,
+          houseNumber: house.houseNumber,
+          type: house.type,
+          typeId: house.typeId,
+          rentAmount: house.rentAmount,
+          isOccupied: house.isOccupied || false,
+          electricityMeterType: house.electricityMeterType || 'shared',
+          waterMeterType: house.waterMeterType || 'shared',
+        });
+        
+        success++;
+      } catch (error) {
+        console.error('Error importing house:', error);
+        failed++;
+      }
+    }
+    
+    return { success, failed };
+  }
+
+  async bulkImportTenants(tenants: Partial<Tenant>[]): Promise<{ success: number, failed: number }> {
+    let success = 0;
+    let failed = 0;
+    
+    for (const tenant of tenants) {
+      try {
+        if (!tenant.houseId || !tenant.name || !tenant.phone) {
+          failed++;
+          continue;
+        }
+        
+        await this.createTenant({
+          houseId: tenant.houseId,
+          name: tenant.name,
+          phone: tenant.phone,
+          email: tenant.email,
+          occupants: tenant.occupants || 1,
+          moveInDate: tenant.moveInDate || new Date().toISOString().split('T')[0],
+          isActive: tenant.isActive !== undefined ? tenant.isActive : true,
+          rentDueDay: tenant.rentDueDay || 1,
+        });
+        
+        success++;
+      } catch (error) {
+        console.error('Error importing tenant:', error);
+        failed++;
+      }
+    }
+    
+    return { success, failed };
   }
 }
 

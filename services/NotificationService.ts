@@ -1,70 +1,158 @@
 import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
 import { Platform } from 'react-native';
+import databaseService, { Tenant } from './DatabaseService';
+import globalState from '../state';
+
+// Configure notifications
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 class NotificationService {
-  async registerForPushNotifications() {
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF231F7C',
-      });
+  // Request permission to send notifications
+  async requestPermissions(): Promise<boolean> {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
     }
-
-    if (Device.isDevice) {
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
+    
+    if (finalStatus !== 'granted') {
+      console.log('Failed to get push token for push notification!');
+      return false;
+    }
+    
+    return true;
+  }
+  
+  // Schedule a notification
+  async scheduleNotification(
+    title: string,
+    body: string,
+    data: any = {},
+    trigger: Notifications.NotificationTriggerInput = null
+  ): Promise<string> {
+    const hasPermission = await this.requestPermissions();
+    
+    if (!hasPermission) {
+      throw new Error('No notification permission');
+    }
+    
+    const notificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data,
+        sound: true,
+      },
+      trigger,
+    });
+    
+    return notificationId;
+  }
+  
+  // Cancel a notification
+  async cancelNotification(notificationId: string): Promise<void> {
+    await Notifications.cancelScheduledNotificationAsync(notificationId);
+  }
+  
+  // Cancel all notifications
+  async cancelAllNotifications(): Promise<void> {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+  }
+  
+  // Schedule rent reminders for all active tenants
+  async scheduleRentReminders(): Promise<void> {
+    try {
+      // Get reminder settings
+      const settings = await databaseService.getReminderSettings();
       
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-      
-      if (finalStatus !== 'granted') {
-        console.log('Failed to get push token for push notification!');
+      if (!settings || !settings.enabled) {
         return;
       }
-    } else {
-      console.log('Must use physical device for Push Notifications');
+      
+      // Cancel existing rent reminders
+      await this.cancelAllNotifications();
+      
+      // Get all active tenants
+      const tenants = await databaseService.getActiveTenants();
+      
+      for (const tenant of tenants) {
+        await this.scheduleRentReminderForTenant(tenant, settings.daysBeforeDue, settings.reminderTime);
+      }
+      
+      console.log(`Scheduled rent reminders for ${tenants.length} tenants`);
+    } catch (error) {
+      console.error('Error scheduling rent reminders:', error);
     }
   }
-
-  async scheduleRentReminder(tenantName: string, houseNumber: string, dueDate: Date) {
-    // Schedule the notification 3 days before rent is due
-    const reminderDate = new Date(dueDate);
-    reminderDate.setDate(reminderDate.getDate() - 3);
-    
-    // Make sure the reminder date is in the future
-    if (reminderDate <= new Date()) {
-      console.log('Reminder date is in the past, not scheduling');
-      return;
+  
+  // Schedule a rent reminder for a specific tenant
+  async scheduleRentReminderForTenant(
+    tenant: Tenant,
+    daysBeforeDue: number,
+    reminderTime: string
+  ): Promise<string | null> {
+    try {
+      // Get the house details
+      const house = await databaseService.getHouseById(tenant.houseId);
+      
+      if (!house) {
+        return null;
+      }
+      
+      // Calculate the next rent due date
+      const now = new Date();
+      const currentMonth = now.getMonth();
+      const currentYear = now.getFullYear();
+      
+      // Create a date for the rent due day in the current month
+      let dueDate = new Date(currentYear, currentMonth, tenant.rentDueDay);
+      
+      // If the due date has passed, use next month
+      if (dueDate.getTime() < now.getTime()) {
+        dueDate = new Date(currentYear, currentMonth + 1, tenant.rentDueDay);
+      }
+      
+      // Calculate the reminder date (X days before due date)
+      const reminderDate = new Date(dueDate);
+      reminderDate.setDate(reminderDate.getDate() - daysBeforeDue);
+      
+      // Set the reminder time
+      const [hours, minutes] = reminderTime.split(':').map(Number);
+      reminderDate.setHours(hours, minutes, 0, 0);
+      
+      // If the reminder date has passed, don't schedule
+      if (reminderDate.getTime() < now.getTime()) {
+        return null;
+      }
+      
+      // Schedule the notification
+      const notificationId = await this.scheduleNotification(
+        'Rent Reminder',
+        `Rent for House ${house.houseNumber} is due on ${dueDate.toLocaleDateString()}. Amount: $${house.rentAmount}`,
+        {
+          tenantId: tenant.id,
+          houseId: house.id,
+          dueDate: dueDate.toISOString(),
+          amount: house.rentAmount,
+        },
+        {
+          date: reminderDate,
+        }
+      );
+      
+      return notificationId;
+    } catch (error) {
+      console.error('Error scheduling rent reminder for tenant:', error);
+      return null;
     }
-    
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: 'Rent Reminder',
-        body: `Reminder: ${tenantName}'s rent for house ${houseNumber} is due on ${dueDate.toLocaleDateString()}`,
-        data: { tenantName, houseNumber, dueDate: dueDate.toISOString() },
-      },
-      trigger: reminderDate,
-    });
-  }
-
-  async sendUtilityBillNotification(tenantName: string, houseNumber: string, billType: string, amount: number) {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: `${billType.charAt(0).toUpperCase() + billType.slice(1)} Bill`,
-        body: `${tenantName}'s ${billType} bill for house ${houseNumber} is ${amount.toFixed(2)}`,
-        data: { tenantName, houseNumber, billType, amount },
-      },
-      trigger: null, // Send immediately
-    });
-  }
-
-  async cancelAllNotifications() {
-    await Notifications.cancelAllScheduledNotificationsAsync();
   }
 }
 

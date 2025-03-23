@@ -43,10 +43,14 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-document-picker",
+      "expo-file-system",
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "scheme": "rental-manager"
   }
 }
