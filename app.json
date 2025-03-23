@@ -31,7 +31,7 @@
       [
         "expo-router",
         {
-          "origin": "https://pool-ecs-fargate-mvp-ssh-task-1b466d4e.dev.kiki.dev"
+          "origin": "https://project-65d6c80a.dev.kiki.dev"
         }
       ],
       [
@@ -42,7 +42,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
-      ]
+      ],
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true

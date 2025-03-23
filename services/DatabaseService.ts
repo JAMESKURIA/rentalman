@@ -1,9 +1,5 @@
-import SQLite from 'react-native-sqlite-storage';
+import * as SQLite from 'expo-sqlite';
 import { Platform } from 'react-native';
-
-// Enable SQLite debugging in development
-SQLite.DEBUG(true);
-SQLite.enablePromise(true);
 
 export interface Building {
   id?: number;
@@ -84,21 +80,16 @@ export interface ServiceProvider {
 }
 
 class DatabaseService {
-  private database: SQLite.SQLiteDatabase | null = null;
+  private database: SQLite.SQLiteDatabase;
   private databaseName = 'RentalManager.db';
 
   constructor() {
+    this.database = SQLite.openDatabase(this.databaseName);
     this.initDatabase();
   }
 
   private async initDatabase(): Promise<void> {
     try {
-      const db = await SQLite.openDatabase({
-        name: this.databaseName,
-        location: 'default',
-      });
-      
-      this.database = db;
       await this.createTables();
       console.log('Database initialized successfully');
     } catch (error) {
@@ -107,10 +98,6 @@ class DatabaseService {
   }
 
   private async createTables(): Promise<void> {
-    if (!this.database) {
-      throw new Error('Database not initialized');
-    }
-
     const createTablesQueries = [
       `CREATE TABLE IF NOT EXISTS buildings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -199,11 +186,9 @@ class DatabaseService {
     ];
 
     try {
-      await this.database.transaction(tx => {
-        createTablesQueries.forEach(query => {
-          tx.executeSql(query);
-        });
-      });
+      for (const query of createTablesQueries) {
+        await this.executeSql(query, []);
+      }
       console.log('Tables created successfully');
     } catch (error) {
       console.error('Error creating tables:', error);
@@ -211,22 +196,36 @@ class DatabaseService {
     }
   }
 
+  // Helper method to execute SQL queries
+  private executeSql(sql: string, params: any[] = []): Promise<any> {
+    return new Promise((resolve, reject) => {
+      this.database.transaction(tx => {
+        tx.executeSql(
+          sql, 
+          params,
+          (_, result) => resolve(result),
+          (_, error) => {
+            console.error('SQL Error:', sql, error);
+            reject(error);
+            return false;
+          }
+        );
+      });
+    });
+  }
+
   // Building CRUD operations
   async createBuilding(building: Building): Promise<number> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
       const { name, address } = building;
       const now = new Date().toISOString();
       
-      const [result] = await this.database!.executeSql(
+      const result = await this.executeSql(
         'INSERT INTO buildings (name, address, createdAt, updatedAt) VALUES (?, ?, ?, ?)',
         [name, address, now, now]
       );
       
-      return result.insertId!;
+      return result.insertId;
     } catch (error) {
       console.error('Error creating building:', error);
       throw error;
@@ -234,12 +233,8 @@ class DatabaseService {
   }
 
   async getBuildings(): Promise<Building[]> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
-      const [result] = await this.database!.executeSql('SELECT * FROM buildings ORDER BY name');
+      const result = await this.executeSql('SELECT * FROM buildings ORDER BY name');
       
       const buildings: Building[] = [];
       for (let i = 0; i < result.rows.length; i++) {
@@ -254,12 +249,8 @@ class DatabaseService {
   }
 
   async getBuildingById(id: number): Promise<Building | null> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
-      const [result] = await this.database!.executeSql(
+      const result = await this.executeSql(
         'SELECT * FROM buildings WHERE id = ?',
         [id]
       );
@@ -276,15 +267,11 @@ class DatabaseService {
   }
 
   async updateBuilding(building: Building): Promise<void> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
       const { id, name, address } = building;
       const now = new Date().toISOString();
       
-      await this.database!.executeSql(
+      await this.executeSql(
         'UPDATE buildings SET name = ?, address = ?, updatedAt = ? WHERE id = ?',
         [name, address, now, id]
       );
@@ -295,12 +282,8 @@ class DatabaseService {
   }
 
   async deleteBuilding(id: number): Promise<void> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
-      await this.database!.executeSql(
+      await this.executeSql(
         'DELETE FROM buildings WHERE id = ?',
         [id]
       );
@@ -312,10 +295,6 @@ class DatabaseService {
 
   // House CRUD operations
   async createHouse(house: House): Promise<number> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
       const { 
         buildingId, 
@@ -329,7 +308,7 @@ class DatabaseService {
       
       const now = new Date().toISOString();
       
-      const [result] = await this.database!.executeSql(
+      const result = await this.executeSql(
         `INSERT INTO houses (
           buildingId, 
           houseNumber, 
@@ -354,7 +333,7 @@ class DatabaseService {
         ]
       );
       
-      return result.insertId!;
+      return result.insertId;
     } catch (error) {
       console.error('Error creating house:', error);
       throw error;
@@ -362,12 +341,8 @@ class DatabaseService {
   }
 
   async getHousesByBuildingId(buildingId: number): Promise<House[]> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
-      const [result] = await this.database!.executeSql(
+      const result = await this.executeSql(
         'SELECT * FROM houses WHERE buildingId = ? ORDER BY houseNumber',
         [buildingId]
       );
@@ -389,12 +364,8 @@ class DatabaseService {
   }
 
   async getHouseById(id: number): Promise<House | null> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
-      const [result] = await this.database!.executeSql(
+      const result = await this.executeSql(
         'SELECT * FROM houses WHERE id = ?',
         [id]
       );
@@ -415,10 +386,6 @@ class DatabaseService {
   }
 
   async updateHouse(house: House): Promise<void> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
       const { 
         id, 
@@ -433,7 +400,7 @@ class DatabaseService {
       
       const now = new Date().toISOString();
       
-      await this.database!.executeSql(
+      await this.executeSql(
         `UPDATE houses SET 
           buildingId = ?, 
           houseNumber = ?, 
@@ -463,12 +430,8 @@ class DatabaseService {
   }
 
   async deleteHouse(id: number): Promise<void> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
-      await this.database!.executeSql(
+      await this.executeSql(
         'DELETE FROM houses WHERE id = ?',
         [id]
       );
@@ -480,10 +443,6 @@ class DatabaseService {
 
   // Tenant CRUD operations
   async createTenant(tenant: Tenant): Promise<number> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
       const { 
         houseId, 
@@ -497,7 +456,7 @@ class DatabaseService {
       
       const now = new Date().toISOString();
       
-      const [result] = await this.database!.executeSql(
+      const result = await this.executeSql(
         `INSERT INTO tenants (
           houseId, 
           name, 
@@ -523,12 +482,12 @@ class DatabaseService {
       );
       
       // Update house occupancy status
-      await this.database!.executeSql(
+      await this.executeSql(
         'UPDATE houses SET isOccupied = 1, updatedAt = ? WHERE id = ?',
         [now, houseId]
       );
       
-      return result.insertId!;
+      return result.insertId;
     } catch (error) {
       console.error('Error creating tenant:', error);
       throw error;
@@ -536,12 +495,8 @@ class DatabaseService {
   }
 
   async getTenantsByHouseId(houseId: number): Promise<Tenant[]> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
-      const [result] = await this.database!.executeSql(
+      const result = await this.executeSql(
         'SELECT * FROM tenants WHERE houseId = ? ORDER BY isActive DESC, moveInDate DESC',
         [houseId]
       );
@@ -563,12 +518,8 @@ class DatabaseService {
   }
 
   async getActiveTenants(): Promise<Tenant[]> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
-      const [result] = await this.database!.executeSql(
+      const result = await this.executeSql(
         'SELECT * FROM tenants WHERE isActive = 1 ORDER BY name',
         []
       );
@@ -590,10 +541,6 @@ class DatabaseService {
   }
 
   async updateTenant(tenant: Tenant): Promise<void> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
       const { 
         id, 
@@ -609,7 +556,7 @@ class DatabaseService {
       
       const now = new Date().toISOString();
       
-      await this.database!.executeSql(
+      await this.executeSql(
         `UPDATE tenants SET 
           houseId = ?, 
           name = ?, 
@@ -637,7 +584,7 @@ class DatabaseService {
       
       // If tenant is no longer active, check if there are any other active tenants for this house
       if (!isActive) {
-        const [result] = await this.database!.executeSql(
+        const result = await this.executeSql(
           'SELECT COUNT(*) as count FROM tenants WHERE houseId = ? AND isActive = 1',
           [houseId]
         );
@@ -646,7 +593,7 @@ class DatabaseService {
         
         // If no active tenants, update house occupancy status
         if (count === 0) {
-          await this.database!.executeSql(
+          await this.executeSql(
             'UPDATE houses SET isOccupied = 0, updatedAt = ? WHERE id = ?',
             [now, houseId]
           );
@@ -659,13 +606,9 @@ class DatabaseService {
   }
 
   async deleteTenant(id: number): Promise<void> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
       // Get tenant details first to update house occupancy if needed
-      const [tenantResult] = await this.database!.executeSql(
+      const tenantResult = await this.executeSql(
         'SELECT houseId, isActive FROM tenants WHERE id = ?',
         [id]
       );
@@ -679,14 +622,14 @@ class DatabaseService {
       const isActive = !!tenant.isActive;
       
       // Delete the tenant
-      await this.database!.executeSql(
+      await this.executeSql(
         'DELETE FROM tenants WHERE id = ?',
         [id]
       );
       
       // If tenant was active, check if there are any other active tenants for this house
       if (isActive) {
-        const [result] = await this.database!.executeSql(
+        const result = await this.executeSql(
           'SELECT COUNT(*) as count FROM tenants WHERE houseId = ? AND isActive = 1',
           [houseId]
         );
@@ -696,7 +639,7 @@ class DatabaseService {
         // If no active tenants, update house occupancy status
         if (count === 0) {
           const now = new Date().toISOString();
-          await this.database!.executeSql(
+          await this.executeSql(
             'UPDATE houses SET isOccupied = 0, updatedAt = ? WHERE id = ?',
             [now, houseId]
           );
@@ -710,15 +653,11 @@ class DatabaseService {
 
   // Utility Bill CRUD operations
   async createUtilityBill(bill: UtilityBill): Promise<number> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
       const { buildingId, billType, billDate, totalAmount, isPaid } = bill;
       const now = new Date().toISOString();
       
-      const [result] = await this.database!.executeSql(
+      const result = await this.executeSql(
         `INSERT INTO utilityBills (
           buildingId, 
           billType, 
@@ -739,7 +678,7 @@ class DatabaseService {
         ]
       );
       
-      return result.insertId!;
+      return result.insertId;
     } catch (error) {
       console.error('Error creating utility bill:', error);
       throw error;
@@ -747,12 +686,8 @@ class DatabaseService {
   }
 
   async getUtilityBillsByBuildingId(buildingId: number): Promise<UtilityBill[]> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
-      const [result] = await this.database!.executeSql(
+      const result = await this.executeSql(
         'SELECT * FROM utilityBills WHERE buildingId = ? ORDER BY billDate DESC',
         [buildingId]
       );
@@ -773,16 +708,42 @@ class DatabaseService {
     }
   }
 
-  async createHouseBill(houseBill: HouseBill): Promise<number> {
-    if (!this.database) {
-      await this.initDatabase();
+  async updateUtilityBill(bill: UtilityBill): Promise<void> {
+    try {
+      const { id, buildingId, billType, billDate, totalAmount, isPaid } = bill;
+      const now = new Date().toISOString();
+      
+      await this.executeSql(
+        `UPDATE utilityBills SET 
+          buildingId = ?, 
+          billType = ?, 
+          billDate = ?, 
+          totalAmount = ?, 
+          isPaid = ?, 
+          updatedAt = ? 
+        WHERE id = ?`,
+        [
+          buildingId, 
+          billType, 
+          billDate, 
+          totalAmount, 
+          isPaid ? 1 : 0, 
+          now, 
+          id
+        ]
+      );
+    } catch (error) {
+      console.error('Error updating utility bill:', error);
+      throw error;
     }
-    
+  }
+
+  async createHouseBill(houseBill: HouseBill): Promise<number> {
     try {
       const { houseId, utilityBillId, amount, isPaid } = houseBill;
       const now = new Date().toISOString();
       
-      const [result] = await this.database!.executeSql(
+      const result = await this.executeSql(
         `INSERT INTO houseBills (
           houseId, 
           utilityBillId, 
@@ -801,7 +762,7 @@ class DatabaseService {
         ]
       );
       
-      return result.insertId!;
+      return result.insertId;
     } catch (error) {
       console.error('Error creating house bill:', error);
       throw error;
@@ -809,12 +770,8 @@ class DatabaseService {
   }
 
   async getHouseBillsByUtilityBillId(utilityBillId: number): Promise<HouseBill[]> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
-      const [result] = await this.database!.executeSql(
+      const result = await this.executeSql(
         'SELECT * FROM houseBills WHERE utilityBillId = ?',
         [utilityBillId]
       );
@@ -836,12 +793,8 @@ class DatabaseService {
   }
 
   async getHouseBillsByHouseId(houseId: number): Promise<(HouseBill & { billType: string, billDate: string })[]> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
-      const [result] = await this.database!.executeSql(
+      const result = await this.executeSql(
         `SELECT hb.*, ub.billType, ub.billDate 
          FROM houseBills hb
          JOIN utilityBills ub ON hb.utilityBillId = ub.id
@@ -867,15 +820,11 @@ class DatabaseService {
   }
 
   async updateHouseBill(houseBill: HouseBill): Promise<void> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
       const { id, amount, isPaid } = houseBill;
       const now = new Date().toISOString();
       
-      await this.database!.executeSql(
+      await this.executeSql(
         `UPDATE houseBills SET 
           amount = ?, 
           isPaid = ?, 
@@ -896,15 +845,11 @@ class DatabaseService {
 
   // Service Provider CRUD operations
   async createServiceProvider(provider: ServiceProvider): Promise<number> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
       const { name, phone, email, serviceType } = provider;
       const now = new Date().toISOString();
       
-      const [result] = await this.database!.executeSql(
+      const result = await this.executeSql(
         `INSERT INTO serviceProviders (
           name, 
           phone, 
@@ -923,7 +868,7 @@ class DatabaseService {
         ]
       );
       
-      return result.insertId!;
+      return result.insertId;
     } catch (error) {
       console.error('Error creating service provider:', error);
       throw error;
@@ -931,12 +876,8 @@ class DatabaseService {
   }
 
   async getServiceProviders(): Promise<ServiceProvider[]> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
-      const [result] = await this.database!.executeSql(
+      const result = await this.executeSql(
         'SELECT * FROM serviceProviders ORDER BY name',
         []
       );
@@ -955,15 +896,11 @@ class DatabaseService {
 
   // Service Record CRUD operations
   async createServiceRecord(record: ServiceRecord): Promise<number> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
       const { houseId, serviceType, serviceDate, cost, providerId, notes } = record;
       const now = new Date().toISOString();
       
-      const [result] = await this.database!.executeSql(
+      const result = await this.executeSql(
         `INSERT INTO serviceRecords (
           houseId, 
           serviceType, 
@@ -986,7 +923,7 @@ class DatabaseService {
         ]
       );
       
-      return result.insertId!;
+      return result.insertId;
     } catch (error) {
       console.error('Error creating service record:', error);
       throw error;
@@ -994,12 +931,8 @@ class DatabaseService {
   }
 
   async getServiceRecordsByHouseId(houseId: number): Promise<ServiceRecord[]> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
-      const [result] = await this.database!.executeSql(
+      const result = await this.executeSql(
         'SELECT * FROM serviceRecords WHERE houseId = ? ORDER BY serviceDate DESC',
         [houseId]
       );
@@ -1018,12 +951,8 @@ class DatabaseService {
 
   // Utility methods
   async getArrearsReport(): Promise<any[]> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
-      const [result] = await this.database!.executeSql(
+      const result = await this.executeSql(
         `SELECT 
           t.id as tenantId,
           t.name as tenantName,
@@ -1062,13 +991,9 @@ class DatabaseService {
   }
 
   async calculateWaterBillShares(utilityBillId: number, totalAmount: number): Promise<{ houseId: number, amount: number }[]> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
       // Get the building ID for this utility bill
-      const [billResult] = await this.database!.executeSql(
+      const billResult = await this.executeSql(
         'SELECT buildingId FROM utilityBills WHERE id = ?',
         [utilityBillId]
       );
@@ -1080,7 +1005,7 @@ class DatabaseService {
       const buildingId = billResult.rows.item(0).buildingId;
       
       // Get all houses in this building with active tenants and their occupant counts
-      const [housesResult] = await this.database!.executeSql(
+      const housesResult = await this.executeSql(
         `SELECT 
           h.id as houseId, 
           h.waterMeterType,
@@ -1137,13 +1062,9 @@ class DatabaseService {
   }
 
   async calculateElectricityBillShares(utilityBillId: number, totalAmount: number): Promise<{ houseId: number, amount: number }[]> {
-    if (!this.database) {
-      await this.initDatabase();
-    }
-    
     try {
       // Get the building ID for this utility bill
-      const [billResult] = await this.database!.executeSql(
+      const billResult = await this.executeSql(
         'SELECT buildingId FROM utilityBills WHERE id = ?',
         [utilityBillId]
       );
@@ -1155,7 +1076,7 @@ class DatabaseService {
       const buildingId = billResult.rows.item(0).buildingId;
       
       // Get all houses in this building with shared electricity meters
-      const [housesResult] = await this.database!.executeSql(
+      const housesResult = await this.executeSql(
         `SELECT 
           h.id as houseId, 
           h.electricityMeterType
