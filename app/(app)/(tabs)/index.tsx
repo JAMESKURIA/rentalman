@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { observer } from "@legendapp/state/react";
 import { Link } from "expo-router";
 import React, { useEffect } from "react";
 import { ScrollView, Text, View } from "react-native";
@@ -9,7 +10,7 @@ import dataSyncService from "../../../services/DataSyncService";
 import globalState, { selectors } from "../../../state";
 import { useTheme } from "../../../utils/ThemeContext";
 
-export default function DashboardScreen() {
+function DashboardScreen() {
 	const { isDarkMode } = useTheme();
 	const { user } = useAuth();
 
@@ -459,3 +460,5 @@ export default function DashboardScreen() {
 		</Container>
 	);
 }
+
+export default observer(DashboardScreen);
